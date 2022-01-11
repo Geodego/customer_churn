@@ -18,6 +18,28 @@ from sklearn.metrics import plot_roc_curve, classification_report
 
 sns.set()
 
+# Columns we are interested in, found in the Kaggle data
+Keep_Cols = [
+    'Customer_Age',
+    'Dependent_count',
+    'Months_on_book',
+    'Total_Relationship_Count',
+    'Months_Inactive_12_mon',
+    'Contacts_Count_12_mon',
+    'Credit_Limit',
+    'Total_Revolving_Bal',
+    'Avg_Open_To_Buy',
+    'Total_Amt_Chng_Q4_Q1',
+    'Total_Trans_Amt',
+    'Total_Trans_Ct',
+    'Total_Ct_Chng_Q4_Q1',
+    'Avg_Utilization_Ratio',
+    'Gender_Churn',
+    'Education_Level_Churn',
+    'Marital_Status_Churn',
+    'Income_Category_Churn',
+    'Card_Category_Churn']
+
 
 def import_data(pth):
     """
@@ -28,7 +50,7 @@ def import_data(pth):
     output:
             df: pandas dataframe
     """
-    df = pd.read_csv(pth)
+    df = pd.read_csv(pth, index_col=0)
     return df
 
 
@@ -46,24 +68,33 @@ def perform_eda(df):
         lambda val: 0 if val == "Existing Customer" else 1)
     plt.figure(figsize=(20, 10))
     df['Churn'].hist()
+    plt.xlabel('category')
+    plt.ylabel('nber customers')
+    plt.title('Churn distribution')
     plt.savefig('./images/eda/churn_distribution.png')
     plt.close()
 
     # plot age histogram
     plt.figure(figsize=(20, 10))
     df['Customer_Age'].hist()
+    plt.xlabel('age')
+    plt.ylabel('nber customers')
+    plt.title('Age distribution')
     plt.savefig('./images/eda/customer_age_distribution.png')
     plt.close()
 
     # plot marital status
     plt.figure(figsize=(20, 10))
     df.Marital_Status.value_counts('normalize').plot(kind='bar')
+    plt.ylabel('nber customers')
+    plt.title('Marital status distribution')
     plt.savefig('./images/eda/marital_status_distribution.png')
     plt.close()
 
     # plot total trans ct:
     plt.figure(figsize=(20, 10))
     sns.distplot(df['Total_Trans_Ct'])
+    plt.title('total transaction distribution')
     plt.savefig('./images/eda/total_transaction_distribution.png')
     plt.close()
 
@@ -92,13 +123,9 @@ def encoder_helper(df, category_lst, response=None):
         response = [category + '_Churn' for category in category_lst]
 
     for category, col_name in zip(category_lst, response):
-        category_values = []  # list of average churn for each value in category
-        category_groups = df.groupby(category).mean()['Churn']
-
-        for val in df[category]:
-            category_values.append(category_groups.loc[val])
-
-        df[col_name] = category_values
+        # add a column 'col_name', which rows are the average value for
+        # the category the row belongs to
+        df[col_name] = df.groupby(category)['Churn'].transform('mean')
 
     return df
 
@@ -130,26 +157,7 @@ def perform_feature_engineering(df, response=None):
     df = encoder_helper(df, cat_columns, response)
     y = df['Churn']
     X = pd.DataFrame()
-    keep_cols = [
-        'Customer_Age',
-        'Dependent_count',
-        'Months_on_book',
-        'Total_Relationship_Count',
-        'Months_Inactive_12_mon',
-        'Contacts_Count_12_mon',
-        'Credit_Limit',
-        'Total_Revolving_Bal',
-        'Avg_Open_To_Buy',
-        'Total_Amt_Chng_Q4_Q1',
-        'Total_Trans_Amt',
-        'Total_Trans_Ct',
-        'Total_Ct_Chng_Q4_Q1',
-        'Avg_Utilization_Ratio',
-        'Gender_Churn',
-        'Education_Level_Churn',
-        'Marital_Status_Churn',
-        'Income_Category_Churn',
-        'Card_Category_Churn']
+    keep_cols = Keep_Cols
 
     X[keep_cols] = df[keep_cols]
     # train test split
@@ -205,6 +213,7 @@ def classification_report_image(y_train,
                  fontproperties='monospace')  # approach improved by OP -> monospace!
         report_name = predictions[method]['file']
         plt.axis('off')
+        plt.title(report_name)
         plt.savefig('./images/results/' + report_name)
         plt.close()
 
@@ -247,7 +256,74 @@ def feature_importance_plot(model, X_data, output_pth):
     plt.close()
 
 
-def train_models(X_train, X_test, y_train, y_test, rfc=None, lrc=None):
+class Classifier():
+    """
+    Parent class for the classifiers
+    """
+
+    def __init__(self):
+        self.model = None
+        self.name = ""
+
+    def train_model(self, X_train, y_train):
+        """
+            train model
+            input:
+                      X_train: X training data
+                      X_test: X testing data
+                      y_train: y training data
+                      y_test: y testing data
+            output:
+                      None
+        """
+        self.model.fit(X_train, y_train)
+
+    def save_model(self):
+        """
+        Save the model in the folder './model'
+        """
+        path = './models/{}_model.pkl'.format(self.name)
+        joblib.dump(self.model, path)
+
+
+class LRClassifier(Classifier):
+    """
+    Class handling operations using Logistic Regression.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.model = LogisticRegression()
+        self.name = 'logistic'
+
+
+class RFClassifier(Classifier):
+    """
+    Class handling operations using Random Forest.
+    """
+    def __init__(self):
+        super().__init__()
+        self.estimator = RandomForestClassifier(random_state=42)
+        self.name = 'rfc'
+        self.param_grid = {
+            'n_estimators': [200, 500],
+            'max_features': ['auto', 'sqrt'],
+            'max_depth': [4, 5, 100],
+            'criterion': ['gini', 'entropy']
+        }
+
+    def train_model(self, X_train, y_train):
+        """
+        Super class training method is overwritten for RFC
+        """
+        rfc = self.estimator
+        cv_rfc = GridSearchCV(estimator=rfc, param_grid=self.param_grid, cv=5)
+        cv_rfc.fit(X_train, y_train)
+        rfc_best = cv_rfc.best_estimator_
+        self.model = rfc_best
+
+
+def train_models(X_train, X_test, y_train, y_test):
     """
     train, store model results: images + scores, and store models.
     If rfc and lrc are provided no training is done.
@@ -256,47 +332,29 @@ def train_models(X_train, X_test, y_train, y_test, rfc=None, lrc=None):
               X_test: X testing data
               y_train: y training data
               y_test: y testing data
-              rfc: pretrained random forest model
-              lrc: pretrained logistic regression model
     output:
               None
     """
-    # fit random forest
-    if rfc is None:
-        # grid search
-        rfc = RandomForestClassifier(random_state=42)
-        param_grid = {
-            'n_estimators': [200, 500],
-            'max_features': ['auto', 'sqrt'],
-            'max_depth': [4, 5, 100],
-            'criterion': ['gini', 'entropy']
-        }
-        cv_rfc = GridSearchCV(estimator=rfc, param_grid=param_grid, cv=5)
-        cv_rfc.fit(X_train, y_train)
-        rfc_best = cv_rfc.best_estimator_
-    else:
-        rfc_best = rfc
-
-    # fit logistic regression
-    if lrc is None:
-        lrc = LogisticRegression()
-        lrc.fit(X_train, y_train)
+    rfc = RFClassifier()
+    rfc.train_model(X_train, y_train)
+    lrc = LRClassifier()
+    lrc.train_model(X_train, y_train)
 
     # plots
     plt.figure(figsize=(15, 8))
-    plot_roc_curve(lrc, X_test, y_test)
+    plot_roc_curve(lrc.model, X_test, y_test)
     ax = plt.gca()
-    plot_roc_curve(rfc_best, X_test, y_test, ax=ax, alpha=0.8)
+    plot_roc_curve(rfc.model, X_test, y_test, ax=ax, alpha=0.8)
 
     # save figure
     plt.savefig('./images/results/roc_curve_result.png')
     plt.close()
 
     # save reports
-    y_train_preds_rf = rfc_best.predict(X_train)
-    y_test_preds_rf = rfc_best.predict(X_test)
-    y_train_preds_lr = lrc.predict(X_train)
-    y_test_preds_lr = lrc.predict(X_test)
+    y_train_preds_rf = rfc.model.predict(X_train)
+    y_test_preds_rf = rfc.model.predict(X_test)
+    y_train_preds_lr = lrc.model.predict(X_train)
+    y_test_preds_lr = lrc.model.predict(X_test)
     classification_report_image(
         y_train,
         y_test,
@@ -307,13 +365,13 @@ def train_models(X_train, X_test, y_train, y_test, rfc=None, lrc=None):
 
     # plot feature importance
     feature_importance_plot(
-        rfc_best,
+        rfc.model,
         X_train,
         './images/results/feature_importances.png')
 
-    # save best model
-    joblib.dump(rfc_best, './models/rfc_model.pkl')
-    joblib.dump(lrc, './models/logistic_model.pkl')
+    # save best models
+    rfc.save_model()
+    lrc.save_model()
 
 
 def get_models():
