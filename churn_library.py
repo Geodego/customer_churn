@@ -5,6 +5,7 @@ author: Geoffroy de Gournay
 date: January 9, 2022
 """
 
+import os
 import joblib
 import pandas as pd
 import numpy as np
@@ -16,6 +17,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import plot_roc_curve, classification_report
 
+os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 sns.set()
 
 # Columns we are interested in, found in the Kaggle data
