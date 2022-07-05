@@ -258,7 +258,7 @@ def feature_importance_plot(model, X_data, output_pth):
     plt.close()
 
 
-class Classifier():
+class Classifier:
     """
     Parent class for the classifiers
     """
